@@ -69,6 +69,12 @@ public class TaskTestCharsets extends AbstractTask {
 		};
 	}
 	
+	
+	public String[] dependsOnTasks()
+	{
+		return new String[] { "FindJdeps", "ListJREModules"};
+	}
+	
 	public String getDescription() {
 		return "Find all supported charsets and test against known set.";
 	}

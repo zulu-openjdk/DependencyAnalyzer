@@ -17,7 +17,7 @@ public class TaskJREVersion extends AbstractTask {
 	
 	public Option[] getOptions(){
 		return new Option[] {
-				new Option("-jre", true, "Path to JRE/JDK")
+				new Option("-jre", false, "Path to JRE/JDK")
 		};
 	}
 	

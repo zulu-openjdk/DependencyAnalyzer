@@ -25,6 +25,11 @@ public class TaskListJREModules extends AbstractTask {
 		};
 	}
 	
+	public String[] dependsOnTasks()
+	{
+		return new String[] { "FindJdeps"};
+	}
+	
 	public String getDescription() {
 		return "Find all modules/jars in the JRE.";
 	}

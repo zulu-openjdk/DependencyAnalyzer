@@ -68,6 +68,11 @@ public class TaskTestLocales extends AbstractTask {
 		};
 	}
 	
+	public String[] dependsOnTasks()
+	{
+		return new String[] { "FindJdeps", "ListJREModules"};
+	}
+	
 	public String getDescription() {
 		return "Find all supported locales and test against known set.";
 	}

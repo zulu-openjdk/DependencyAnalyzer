@@ -38,8 +38,11 @@ public class TaskClassDependencies extends AbstractTask {
 			analyseModule( module, jreModules, allModules);
 		}
 	}
-	
-	
+
+	public String[] dependsOnTasks()
+	{
+		return new String[] { "ListJREModules", "ParseAppClassPath" };
+	}
 	
 	public static void resolveDependencies()
 	{
