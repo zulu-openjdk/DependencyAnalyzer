@@ -1,0 +1,11 @@
+ar
+iw
+zh
+ja
+zh_TW
+hi
+vi
+zh_HK
+th
+ko
+zh_SG
