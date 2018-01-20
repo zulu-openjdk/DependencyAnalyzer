@@ -15,8 +15,10 @@ public class TaskJREVersion extends AbstractTask {
 		return (ctx.jreDir != null);
 	}
 	
-	public String getOptions(){
-		return null;
+	public Option[] getOptions(){
+		return new Option[] {
+				new Option("-jre", true, "Path to JRE/JDK")
+		};
 	}
 	
 	public String getDescription() {

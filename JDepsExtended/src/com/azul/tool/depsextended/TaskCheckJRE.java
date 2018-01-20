@@ -21,8 +21,10 @@ public class TaskCheckJRE extends AbstractTask {
 		return (ctx.jreDir != null);
 	}
 	
-	public String getOptions(){
-		return null;
+	public Option[] getOptions(){
+		return new Option[] {
+				new Option("-jre", true, "<jre> - Path to JRE/JDK")
+		};
 	}
 	
 	public String getDescription() {

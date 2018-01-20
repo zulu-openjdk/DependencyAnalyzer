@@ -21,10 +21,6 @@ public class TaskClassDependencies extends AbstractTask {
 		return true;
 	}
 	
-	public String getOptions(){
-		return null;
-	}
-	
 	public String getDescription() {
 		return "Parse all class dependencies using jdeps. Try to resolve in application and to JRE. Report all unresolve depdencies in the application and towards the JRE.";
 	}

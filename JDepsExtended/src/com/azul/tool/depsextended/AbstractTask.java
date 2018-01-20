@@ -35,12 +35,17 @@ public abstract class AbstractTask implements Task {
 		return "No description";
 	}
 	
-	public String getOptions(){
-		return null;
+	public Option[] getOptions(){
+		return new Option[] {};
 	}
 	
 	public String[] getJobs() {
 		return new String[] {"default"};
+	}
+	
+	public String[] dependsOnTasks()
+	{
+		return new String[] {};
 	}
 	
 	public Set<String> jobs() {

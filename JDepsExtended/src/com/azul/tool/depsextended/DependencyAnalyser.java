@@ -66,6 +66,8 @@ public class DependencyAnalyser {
 	public static String runName = date.format(formatter);
 	
 	//Options
+	public static Set<String> options = new HashSet<String>();
+	
 	public static String activeJob = "default";
 	public static String sampleOption = null;
 	public static String appClasspath;
@@ -75,8 +77,9 @@ public class DependencyAnalyser {
 	public static String saveLocales = null;
 	
 	//Internal
-	static List<Task> tasks = new ArrayList<Task>();
+	static List<Task> allTasks = new ArrayList<Task>();
 	static Set<String> jobs = new LinkedHashSet<String>();
+	static List<Task> activeTasks;
 	
 	//Working data
 	static List<String> appModulePaths;
@@ -107,56 +110,97 @@ public class DependencyAnalyser {
 	public void tasks()
 	{
 		//tasks.add(new TaskSample());
-		tasks.add(new TaskFindJREinJDK());
-		tasks.add(new TaskParseAppClasspath());
-		tasks.add(new TaskCheckJRE());
-		tasks.add(new TaskJREVersion());
-		tasks.add(new TaskListJREModules());
-		tasks.add(new TaskFindJdeps());
-		tasks.add(new TaskClassDependencies());
-		tasks.add(new TaskTestCharsets());
-		tasks.add(new TaskTestLocales());
+		allTasks.add(new TaskFindJREinJDK());
+		allTasks.add(new TaskParseAppClasspath());
+		allTasks.add(new TaskCheckJRE());
+		allTasks.add(new TaskJREVersion());
+		allTasks.add(new TaskListJREModules());
+		allTasks.add(new TaskFindJdeps());
+		allTasks.add(new TaskClassDependencies());
+		allTasks.add(new TaskTestCharsets());
+		allTasks.add(new TaskTestLocales());
 	
 		//Setup
-		for (Task task: tasks) {
+		for (Task task: allTasks) {
 			String s = task.getClass().getSimpleName();
 			s = s.substring(4);
 			task.setName(s);
 		}
 	}
+
 	
-	public void execute(String job) 
+	public List<Task> getActiveTasks(String job) 
+	{
+		List<Task> tasks = new ArrayList<Task>();
+		//Filter for tasks active in current job
+		for( Task task : allTasks ) {
+			if (hasJob(task,job) ) {
+				tasks.add(task);
+			}
+		}			
+		//Resolve dependencies recursively
+		for( Task task : tasks ) {
+			resolveDependencies(task, tasks, job);
+		}	
+		return tasks;
+	}
+	
+	public void resolveDependencies(Task task, List<Task> tasks, String job) 
+	{
+		for (String dep: task.dependsOnTasks() )
+		{
+			Task depTask = findTaskByName(dep);
+			if (depTask==null) terminateWithError("Task not found: " + dep + " - " + task.getName() + " depends on it.");
+			else {
+				depTask.addJob(job);
+				resolveDependencies(depTask, tasks, job);
+			}
+		}
+		
+	}
+	
+	public void checkOptions( List<Task> tasks) 
+	{
+		for( Task task : tasks ) {
+			for( Option o: task.getOptions())
+			{
+				if (o.mandatory && !options.contains(o.name) )
+				{
+					terminateWithError("Mandatory option: " + o.name + " in task " + task.getName() + " not found.");
+				}
+			}
+		}
+	}
+	
+	
+	public void execute() 
 	{
 		//Preparation
 		wrkDir = System.getProperty("user.dir");
 		if (debug)  debug("Working directory: " + wrkDir); 
 		
 		//Executing
-		for( Task task : tasks ) {
-			if (hasJob(task,job) ) {
-				if (task.canRun(this)) {
-					try { 
-						if (debug) debug("Running task: " + task.getName()); 
-						task.run(this);
-					} catch (Exception e)
-					{
-						StringWriter writer = new StringWriter();
-						e.printStackTrace(new PrintWriter(writer));
-						print("Exception executing task: " + task.getName());
-						print(writer.toString());
-					}
-				} else {
-					if (debug) debug("Preconditions not met for: " + task.getName()); 
+		for( Task task : activeTasks ) {
+			if (task.canRun(this)) {
+				try { 
+					if (debug) debug("Running task: " + task.getName()); 
+					task.run(this);
+				} catch (Exception e)
+				{
+					StringWriter writer = new StringWriter();
+					e.printStackTrace(new PrintWriter(writer));
+					print("Exception executing task: " + task.getName());
+					print(writer.toString());
 				}
 			} else {
-				if (debug) debug("Skipping task (not matching job): " + task.getName()); 
+				if (debug) debug("Preconditions not met for: " + task.getName()); 
 			}
 		}
 	}
 	
 	public void getJobs()
 	{
-		for( Task task : tasks ) {
+		for( Task task : allTasks ) {
 			for ( String job: task.jobs() ) {
 				if ( !jobs.contains(job)) jobs.add(job);
 			}
@@ -166,11 +210,12 @@ public class DependencyAnalyser {
 	public void describeJobs()
 	{
 		for( String job : jobs ) {
-			describeJob(job);
+			List<Task> tasks = getActiveTasks(job);
+			describeJob(job, tasks);
 		}
 	}
 	
-	public void describeJob(String job)
+	public void describeJob(String job, List<Task> tasks)
 	{
 		String tlist = "(";
 		for( Task task : tasks ) {tlist+=task.getName();tlist+=" ";};
@@ -179,8 +224,10 @@ public class DependencyAnalyser {
 		print( "Options:");
 		for( Task task : tasks ) {
 			if (hasJob(task,job)) {
-				String options = task.getOptions();
-				if (options!=null) print( "    " + options );
+				Option[] options = task.getOptions();
+				for( Option o: options ){
+					print( "    " + (o.mandatory?"(":"") + o.name + (o.mandatory?")":"") + " " + o.description );
+				}
 			}
 		}
 		print( "Tasks:");
@@ -360,15 +407,6 @@ public class DependencyAnalyser {
 		}
 		return modulepaths;
 	}
-	/*
-	public static void checkRtJar(Module module)
-	{
-		if (module.name.equals("rt.jar") || module.name.equals("modules"))
-		{
-			module.klasses.put("java.lang.Object", new Klass("java.lang.Object", module));
-		}
-	}
-	*/
 	
 	public static String extractModuleName(String modulePath)
 	{ 
@@ -448,76 +486,88 @@ public class DependencyAnalyser {
 		while ( (line = in.readLine()) != null ) {
 			list.add(line);
 		}
+		in.close();
 		return list;
 	}
 	
+	public static Task findTaskByName(String taskname)
+	{
+		for (Task task: allTasks) { 
+			if (task.getName().equals(taskname) ) return task;
+		}
+		return null;
+	}
 	
+	public static boolean validateOption( String arg, String option )
+	{
+		if (arg.equals(option)) 
+		{
+			options.add(option);
+			return true;
+		} else return false;
+	}
 	
 	public static void main(String[] arg) throws Exception
 	{
 		System.out.println("Java Dependency Analyser");
 		
 		DependencyAnalyser ctx = new DependencyAnalyser();
+		
 		ctx.tasks();
 		
 		int i=0;
 		while ( arg.length > i)
 		{
-			if ( arg[i].equals("-debug") )
+			if ( validateOption( arg[i] ,"-debug") )
 			{
 				i++;
 				debug = true;
 				if (debug) debug("Debug mode - on");
-			} else if ( arg[i].equals("-job") )
+			} else if ( validateOption(arg[i],"-job") )
 			{
 				i++;
 				activeJob = arg[i].toLowerCase();
 				i++;
-			} else if ( arg[i].equals("-addtasks") )
+			} else if ( validateOption(arg[i],"-addtasks") )
 			{
 				i++;
 				StringTokenizer tok = new StringTokenizer(arg[i],",");
 				while ( tok.hasMoreTokens() )
 				{
-					boolean found = false;
 					String token = tok.nextToken();
-					for (Task task: tasks) { 
-						if (task.getName().equals(token) ) 
-						{
-							found= true;
-							task.addJob(activeJob); };
-						}
-					if (!found) print("Task not found: " + token);
+					Task task = findTaskByName(token);
+					if (task!=null) { task.addJob(token); } 
+					else terminateWithError("Task not found: " + token);
 				}
 				i++;
-			} else if ( arg[i].equals("-recursive") )
+			} else if ( validateOption(arg[i],"-recursive") )
 			{
 				i++;
 				recursive = true;
-			} else if ( arg[i].equals("-savecharsets") )
+			} else if ( validateOption(arg[i],"-savecharsets") )
 			{
 				i++;
 				saveCharsets = arg[i];
 				i++;
-			} else if ( arg[i].equals("-savelocales") )
+			} else if ( validateOption(arg[i],"-savelocales") )
 			{
 				i++;
 				saveLocales = arg[i];
 				i++;
-			} else if ( arg[i].equals("-appclasspath") )
+			} else if ( validateOption(arg[i],"-appclasspath") )
 			{
 				i++;
 				appClasspath = arg[i];
 				i++;
 				if (debug) debug("Param -appclasspath: " + appClasspath);
-			} else if ( arg[i].equals("-jre") )
+			} else if ( validateOption(arg[i],"-jre") )
 			{
 				i++;
 				String s = arg[i];
 				if (s!=null) jreDir = new File(s);
 				i++;
 				if (debug) debug("Param -jre: " + jreDir);
-			} else if ( arg[i].equals("-unittest") )
+			} else if ( validateOption(arg[i],"-unittest") )
 			{
 				i++;
 				String unittest = arg[i];
@@ -544,9 +594,10 @@ public class DependencyAnalyser {
 			ctx.describeJobs();
 			System.exit(1);
 		}
-		
-		ctx.execute(activeJob);
-		ctx.printReport();
+		activeTasks = ctx.getActiveTasks(activeJob);
+		ctx.checkOptions( activeTasks);
+		ctx.execute();
+		printReport();
 		
 		if (debug) debug("Terminating regularely");
 	}

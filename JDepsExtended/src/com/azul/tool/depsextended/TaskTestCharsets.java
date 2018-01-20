@@ -63,8 +63,10 @@ public class TaskTestCharsets extends AbstractTask {
 		return (ctx.jreModulePaths != null);
 	}
 	
-	public String getOptions(){
-		return "-saveCharsets <file>\t\\\\Save charsets from JRE to file.";
+	public Option[] getOptions(){
+		return new Option[] {
+				new Option("-saveCharsets", false, "<filename> - Save charsets from JRE to file.")
+		};
 	}
 	
 	public String getDescription() {

@@ -62,8 +62,10 @@ public class TaskTestLocales extends AbstractTask {
 		return (ctx.jreModulePaths != null);
 	}
 	
-	public String getOptions(){
-		return "-saveLocales <file>\t\\\\Save locales from JRE to file.";
+	public Option[] getOptions(){
+		return new Option[] {
+				new Option("-saveLocales", false, "<filename> - Save locales from JRE to file.")
+		};
 	}
 	
 	public String getDescription() {

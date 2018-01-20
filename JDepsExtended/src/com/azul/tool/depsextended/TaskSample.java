@@ -8,8 +8,11 @@ public class TaskSample extends AbstractTask {
 		if (debug) debug("Sample Debug: -sampleOption " + ctx.sampleOption);
 	}
 	
-	public String getOptions(){
-		return "-sampleOption <sampleValue>\t\\\\Just a sample option.";
+	
+	public Option[] getOptions(){
+		return new Option[] {
+				new Option("-jrsampleOptione", true, "<sampleValue> - Just a sample option.")
+		};
 	}
 	
 	public String getDescription() {
