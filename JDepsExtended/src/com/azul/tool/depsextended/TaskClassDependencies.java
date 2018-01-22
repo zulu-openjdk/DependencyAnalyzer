@@ -54,9 +54,13 @@ public class TaskClassDependencies extends AbstractTask {
 				for(Dependency dep: entry.getValue().dependencies ) 
 				{
 					if ( dep.resolvedto==null ) {
-						dep.resolvedto = resolveKlass(dep.klassname);
+						Module depModule = resolveKlass(dep.klassname);	
+						dep.resolvedto = depModule;			
 						if (dep.resolvedto==null)
 							print("Resolution failure: " + module.name +":"+entry.getValue().name+"->"+dep.klassname);
+						else {
+							module.addDependency(depModule, depModule.klasses.get(dep.klassname));
+						}
 					}
 				}
 			}

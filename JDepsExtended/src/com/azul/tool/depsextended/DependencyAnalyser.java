@@ -1,20 +1,9 @@
 package com.azul.tool.depsextended;
 
-import static com.azul.tool.depsextended.DependencyAnalyser.allModules;
-import static com.azul.tool.depsextended.DependencyAnalyser.appModules;
-import static com.azul.tool.depsextended.DependencyAnalyser.debug;
-import static com.azul.tool.depsextended.DependencyAnalyser.extractModuleName;
-import static com.azul.tool.depsextended.DependencyAnalyser.jdepsPath;
-import static com.azul.tool.depsextended.DependencyAnalyser.makeOutputFile;
-import static com.azul.tool.depsextended.DependencyAnalyser.print;
-import static com.azul.tool.depsextended.DependencyAnalyser.saveCharsets;
-
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
-import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.io.Writer;
@@ -24,29 +13,27 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map.Entry;
 import java.util.Set;
 import java.util.StringTokenizer;
 
 
 /*
  *  Features to add:
- *  - Determine OS (properties)
+ *  OK - Determine OS (properties)
+ *  OK - Way to switch off tasks on from command line (after dependency)
+ *  [ ] Test full run
+ *  OK - Print: name of task 
+ *  [ ] Dependency package level report by default
+ *  [ ] -detail:class
  *  
- *  - Way to switch offon tasks and on from command line
+ *  OK - list Dependent module
+ *  OK - list classes with unresolved
+ *  OK - list of unresolved 
  *  
- *  - list Dependent module
- *  - list classes with unresolved
- *  - list of unresolved 
- *  
- *  - locales
- *  - encodings
  *  - swing themes
  *  
- *  - headless?
- *  
+ *  - headless
  *  - guess version from java.so/dll
- *  
  *  
  *  Nice to have
  *  - Set application root path
@@ -67,7 +54,6 @@ public class DependencyAnalyser {
 	
 	//Options
 	public static Set<String> options = new HashSet<String>();
-	
 	public static String activeJob = "default";
 	public static String sampleOption = null;
 	public static String appClasspath;
@@ -75,11 +61,14 @@ public class DependencyAnalyser {
 	public static boolean recursive = false;
 	public static String saveCharsets = null;
 	public static String saveLocales = null;
+	public static boolean detailsClass = false;
 	
 	//Internal
 	static List<Task> allTasks = new ArrayList<Task>();
 	static Set<String> jobs = new LinkedHashSet<String>();
 	static List<Task> activeTasks;
+	static List<Task> excludeTasks = new ArrayList<Task>();
+	
 	
 	//Working data
 	static List<String> appModulePaths;
@@ -87,6 +76,7 @@ public class DependencyAnalyser {
 	static String javaHomePath;
 	static String wrkDir;
 	static String jdepsPath;
+	static String osName;
 	
 	
 	//Results
@@ -176,24 +166,32 @@ public class DependencyAnalyser {
 	public void execute() 
 	{
 		//Preparation
+		osName = System.getProperty("os.name");
+		if (debug)  debug("OS: " + osName); 
 		wrkDir = System.getProperty("user.dir");
 		if (debug)  debug("Working directory: " + wrkDir); 
 		
 		//Executing
 		for( Task task : activeTasks ) {
-			if (task.canRun(this)) {
-				try { 
-					if (debug) debug("Running task: " + task.getName()); 
-					task.run(this);
-				} catch (Exception e)
-				{
-					StringWriter writer = new StringWriter();
-					e.printStackTrace(new PrintWriter(writer));
-					print("Exception executing task: " + task.getName());
-					print(writer.toString());
-				}
+			if (excludeTasks.contains(task) ) {
+				print( "Skipping task: " + task.getName());
 			} else {
-				if (debug) debug("Preconditions not met for: " + task.getName()); 
+				if (task.canRun(this)) {
+					try { 
+						print("Task: " + task.getName()); 
+						task.run(this);
+						print("    - OK");
+						print("");
+					} catch (Exception e)
+					{
+						StringWriter writer = new StringWriter();
+						e.printStackTrace(new PrintWriter(writer));
+						print("Exception executing task: " + task.getName());
+						print(writer.toString());
+					}
+				} else {
+					if (debug) debug("Preconditions not met for: " + task.getName()); 
+				}
 			}
 		}
 	}
@@ -248,7 +246,10 @@ public class DependencyAnalyser {
 		return false;
 	}
 
-	
+	/**
+	 * This is legacy code to be removed after testing the execute() codepath
+	 * @throws Exception
+	 */
 	public void analyse() throws Exception
 	{
 		/*
@@ -500,7 +501,7 @@ public class DependencyAnalyser {
 	
 	public static boolean validateOption( String arg, String option )
 	{
-		if (arg.equals(option)) 
+		if (arg.toLowerCase().equals(option)) 
 		{
 			options.add(option);
 			return true;
@@ -528,7 +529,7 @@ public class DependencyAnalyser {
 				i++;
 				activeJob = arg[i].toLowerCase();
 				i++;
-			} else if ( validateOption(arg[i],"-addtasks") )
+			} else if ( validateOption(arg[i],"-includetasks") )
 			{
 				i++;
 				StringTokenizer tok = new StringTokenizer(arg[i],",");
@@ -537,6 +538,18 @@ public class DependencyAnalyser {
 					String token = tok.nextToken();
 					Task task = findTaskByName(token);
 					if (task!=null) { task.addJob(token); } 
+					else terminateWithError("Task not found: " + token);
+				}
+				i++;
+			} else if ( validateOption(arg[i],"-excludetasks") )
+			{
+				i++;
+				StringTokenizer tok = new StringTokenizer(arg[i],",");
+				while ( tok.hasMoreTokens() )
+				{
+					String token = tok.nextToken();
+					Task task = findTaskByName(token);
+					if (task!=null) { excludeTasks.add(task); } 
 					else terminateWithError("Task not found: " + token);
 				}
 				i++;
@@ -554,6 +567,10 @@ public class DependencyAnalyser {
 				i++;
 				saveLocales = arg[i];
 				i++;
+			} else if ( validateOption(arg[i],"-detailsclass") )
+			{
+				i++;
+				detailsClass = true;
 			} else if ( validateOption(arg[i],"-appclasspath") )
 			{
 				i++;
