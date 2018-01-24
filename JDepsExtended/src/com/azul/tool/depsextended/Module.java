@@ -1,8 +1,11 @@
 package com.azul.tool.depsextended;
 
+import static com.azul.tool.depsextended.DependencyAnalyser.*;
+
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Map.Entry;
 
 public class Module {
 	public String name;
@@ -11,7 +14,6 @@ public class Module {
 	public HashMap<String,Module> dependentModules;
 	public HashMap<String,HashMap<String,Pakage>> dependentPakages;
 	public HashMap<String,Klass> klasses;
-	
 	public HashMap<String,Pakage> unresolved;
 	
 	public Module( String name )
@@ -43,6 +45,7 @@ public class Module {
 			pakages.put(pakageName, pakage);
 		}
 		pakage.klasses.add(klass.name);
+		pakage.seenIn.put(module.name, module);
 	}
 	
 	public void addUnresolved( String klassName)
@@ -67,4 +70,55 @@ public class Module {
 		Module oo = (Module)o;
 		return this.path.equals(oo.path);
 	}
+	
+	public void reportDependencies(){
+		//if (detailsClass==true)
+		//Report modules we depend on
+		if ( this.dependentModules.size()!=0)
+		{
+			print("Depends on:");
+			for(Entry<String, Module> entry: this.dependentModules.entrySet()) 
+			{ 
+				print("    " + entry.getValue().name );
+			}
+			print("");
+		}
+		//Report unresolved packages
+		if ( this.unresolved.size()!=0)
+		{
+			print("Unresolved Pakages:");
+			for(Entry<String, Pakage> entry: this.unresolved.entrySet()) 
+			{ 
+				print("    " + entry.getValue().name );
+				if (detailsClass==true) {
+					for( String klassName: entry.getValue().klasses)
+					{
+						print("        " + klassName );
+					}
+					print("");
+				}
+			}
+			print("");
+		}
+	}
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,5 +1,6 @@
 package com.azul.tool.depsextended;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -7,6 +8,7 @@ public class Pakage {
 	public String name;
 	public boolean isJava;
 	
+	public HashMap<String,Module> seenIn = new HashMap<String,Module>();
 	public Set<String> klasses = new HashSet<String>();
 	
 	public static boolean isJava(String name)

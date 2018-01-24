@@ -1,6 +1,7 @@
 package com.azul.tool.depsextended;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -18,20 +19,17 @@ import java.util.StringTokenizer;
 
 
 /*
+ *  https://github.com/zulu-openjdk/DependencyAnalyzer
+ *
+ * 24.2 Changes
+ * Tested full analysis
+ * - debuglog option
+ * - reportlog option
+ * - reporting unresolved packages only by default
+ * - excludeTask Option
+ * 
  *  Features to add:
- *  OK - Determine OS (properties)
- *  OK - Way to switch off tasks on from command line (after dependency)
- *  [ ] Test full run
- *  OK - Print: name of task 
- *  [ ] Dependency package level report by default
- *  [ ] -detail:class
- *  
- *  OK - list Dependent module
- *  OK - list classes with unresolved
- *  OK - list of unresolved 
- *  
  *  - swing themes
- *  
  *  - headless
  *  - guess version from java.so/dll
  *  
@@ -41,19 +39,29 @@ import java.util.StringTokenizer;
  *  
  *  Option strings for testing
  *   -appclasspath D:/Java/util/cassandra/apache-cassandra-3.10/lib/* -jre D:/Java/zulu6_64/
+ *   
+ *   -debuglog debug.txt -debug  -appclasspath D:/Java/util/cassandra/apache-cassandra-3.10/lib/~ -jre D:/Java/zulu6_64/
+ *   
+ *   -debuglog debug.txt -debug  -appclasspath D:/Java/util/cassandra/apache-cassandra-3.10/lib/~ -jre D:/Java/zulu6_64/
  *  
  */
 
 public class DependencyAnalyser {
 
 	public static boolean debug = false;
+	public static boolean suppressDebugException = false;
 	
 	public static LocalDateTime date = LocalDateTime.now();
 	public static DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
 	public static String runName = date.format(formatter);
 	
+	public static BufferedWriter debugLogWriter;
+	public static BufferedWriter reportLogWriter;
+	
 	//Options
 	public static Set<String> options = new HashSet<String>();
+	public static String debuglog = null;
+	public static String reportlog = null;
 	public static String activeJob = "default";
 	public static String sampleOption = null;
 	public static String appClasspath;
@@ -87,6 +95,20 @@ public class DependencyAnalyser {
 	
 	public static void debug(String s)
 	{
+		if ( debugLogWriter!=null ) {
+			try {
+				debugLogWriter.write("DEBUG: "+s+"\n");
+				return;
+			} catch (Exception e )
+			{
+				if (suppressDebugException==false)
+				{
+					e.printStackTrace();
+					suppressDebugException = true;
+					System.out.println("Suppressing further exception from debug log write.");
+				}
+			}
+		}
 		System.out.print("DEBUG: ");
 		System.out.println(s);
 	}
@@ -95,6 +117,16 @@ public class DependencyAnalyser {
 	{
 		if (debug) debug(s);
 		System.out.println(s);
+	}
+	
+	public static void finalizeResources() 
+	{
+		try {
+			if ( debugLogWriter!=null) debugLogWriter.close();
+		} catch (Exception e ) { e.printStackTrace(); };
+		try {
+			if ( reportLogWriter!=null) reportLogWriter.close();
+		} catch (Exception e ) { e.printStackTrace(); };
 	}
 	
 	public void tasks()
@@ -130,20 +162,21 @@ public class DependencyAnalyser {
 		}			
 		//Resolve dependencies recursively
 		for( Task task : tasks ) {
-			resolveDependencies(task, tasks, job);
+			resolveTaskDependencies(task, tasks, job);
 		}	
 		return tasks;
 	}
 	
-	public void resolveDependencies(Task task, List<Task> tasks, String job) 
+	public void resolveTaskDependencies(Task task, List<Task> tasks, String job) 
 	{
 		for (String dep: task.dependsOnTasks() )
 		{
 			Task depTask = findTaskByName(dep);
-			if (depTask==null) terminateWithError("Task not found: " + dep + " - " + task.getName() + " depends on it.");
+			if (depTask==null) 
+				terminateWithError("Task not found: " + dep + " - " + task.getName() + " depends on it.");
 			else {
 				depTask.addJob(job);
-				resolveDependencies(depTask, tasks, job);
+				resolveTaskDependencies(depTask, tasks, job);
 			}
 		}
 		
@@ -165,22 +198,17 @@ public class DependencyAnalyser {
 	
 	public void execute() 
 	{
-		//Preparation
-		osName = System.getProperty("os.name");
-		if (debug)  debug("OS: " + osName); 
-		wrkDir = System.getProperty("user.dir");
-		if (debug)  debug("Working directory: " + wrkDir); 
-		
 		//Executing
 		for( Task task : activeTasks ) {
 			if (excludeTasks.contains(task) ) {
 				print( "Skipping task: " + task.getName());
+				print( "" );
 			} else {
 				if (task.canRun(this)) {
 					try { 
 						print("Task: " + task.getName()); 
 						task.run(this);
-						print("    - OK");
+						print("    - Done");
 						print("");
 					} catch (Exception e)
 					{
@@ -246,118 +274,12 @@ public class DependencyAnalyser {
 		return false;
 	}
 
-	/**
-	 * This is legacy code to be removed after testing the execute() codepath
-	 * @throws Exception
-	 */
-	public void analyse() throws Exception
-	{
-		/*
-		 * Preparation
-		 */
-		if (jreDir==null && debug) debug("JRE not spefified. Performing application dependency analysis only."); 
-		if (appClasspath==null && debug) debug("Application classpath not specified. Performing JRE analysis only."); 
-		
-		wrkDir = System.getProperty("user.dir");
-		if (debug)  debug("Working directory: " + wrkDir); 
-		
-		/*
-		 * Parse app classpath
-		 */
-		appModulePaths = parseClassPath(appClasspath);
-		if (debug) for(String s: appModulePaths) debug("App module:" + s); 
-		for(String s: appModulePaths) {
-			File f = new File(s);
-			if (!f.exists()) terminateWithError("Classpath element does not exist: " + appModulePaths);
-		}
-		
-		/*
-		 * Check for jre in JDK
-		 */
-		if (jreDir!=null)
-		{
-			//Check for JDK
-			File checkJDK = new File(jreDir, "jre");
-			if ( checkJDK.exists() ) {
-				jreDir = checkJDK;
-				if (debug)  debug("Found JDK switching to JRE: " + jreDir); 
-			}
-		}
-		/*
-		 *Common sense check that this is a JRE 
-		 */
-		if (jreDir!=null)
-		{
-			File checkrtjar = new File(jreDir, "lib/rt.jar");
-			File checkmodules = new File(jreDir, "lib/modules");
-			if ( !checkrtjar.exists() && !checkmodules.exists())
-			{
-				terminateWithError( jreDir + " does not seem to be a JRE. Neither " +  checkrtjar + " nor " + checkmodules + " exists!");
-			}
-			/*
-			 * Traverse jre and find jars
-			 */
-			jreModulePaths = searchByExtension(jreDir, ".jar", true);
-			if (debug) for(String s: jreModulePaths) debug("JRE module:" + s); 
-		}	
-		
-		/*
-		 * Try to guess Java version from java.dll
-		 */
-		if (jreDir!=null)
-		{
-			//TODO
-		}
-		
-		/*
-		 * Find Jdeps
-		 */
-		javaHomePath = System.getProperty("java.home");
-		if (debug)  debug("Java Home: " + javaHomePath); 
-		File javaHomeDir = new File(javaHomePath );
-		
-		File checkjdeps = new File(javaHomeDir, "bin/jdeps");
-		if ( !checkjdeps.exists() )  {
-		checkjdeps = new File(javaHomeDir, "bin/jdeps.exe");
-		if ( !checkjdeps.exists() ) {
-		checkjdeps = new File(javaHomeDir, "../bin/jdeps");
-		if ( !checkjdeps.exists() ) {
-		checkjdeps = new File(javaHomeDir, "../bin/jdeps.exe");
-		if ( !checkjdeps.exists() ) {
-			terminateWithError("Jdeps not found in currently used JRE/JDK " + javaHomePath );
-		}}}}
-		jdepsPath = checkjdeps.getAbsolutePath(); 
-		if (debug)  debug("Using Jdeps in: " + jdepsPath); 
-		
 	
-		/*
-		//Resolve dependencies in app modules
-		 * 
-		 */
-		//analyseModules();
-		//resolveDependencies();
-		
-		/*
-		//Look for encodings - extract list 
-		 * 
-		 */
-		
-		/*
-		//Look for locales - extract list 
-		 * 
-		 */
-		
-		/*
-		//look for headless lib
-		 * 
-		 */
-		
-		
-	}
-	
-	public static void terminateWithError(String error)
+	public static void terminateWithError(String error) 
 	{
 		print( error); 
+		print( "Terminating" ); 
+		finalizeResources();
 		System.exit(1);
 	}
 
@@ -381,7 +303,7 @@ public class DependencyAnalyser {
 		{
 			String path = tokenizer.nextToken();
 			//Expanding wildcards
-			if (path.endsWith("*")) {
+			if (path.endsWith("~")) {
 				path = path.substring(0, path.length()-1);
 				if (path.length() == 0) path = ".";
 				modulepaths.addAll(searchByExtension(new File(path), ".jar", recursive ));
@@ -435,7 +357,7 @@ public class DependencyAnalyser {
 
 	public static void analyseModule( String module, HashSet<Module> set1, HashSet<Module> set2 ) throws Exception
 	{
-		print("Analysing:" + module); 
+		print("    Analysing:" + module); 
 		String moduleName = extractModuleName(module);
 		File outPutFile =  makeOutputFile(moduleName);
 		JDeps.execute(module, outPutFile.getAbsolutePath(), jdepsPath);
@@ -493,17 +415,34 @@ public class DependencyAnalyser {
 	
 	public static Task findTaskByName(String taskname)
 	{
+		taskname = taskname.toLowerCase();
 		for (Task task: allTasks) { 
-			if (task.getName().equals(taskname) ) return task;
+			if (task.getName().toLowerCase().equals(taskname) ) return task;
 		}
 		return null;
 	}
 	
+	public static boolean validateOption( String[] arg, int i, String option )
+	{
+		String arg2 = null;
+		if (arg.length<i+1) arg2 = arg[i+1];
+		return validateOption(arg[i], arg2, option);
+	}
+	
 	public static boolean validateOption( String arg, String option )
+	{
+		return validateOption( arg, null, option );
+	}
+	
+	public static boolean validateOption( String arg, String arg2, String option )
 	{
 		if (arg.toLowerCase().equals(option)) 
 		{
 			options.add(option);
+			String out = "Option: " + option;
+			if (arg2!=null ) out+=" " + arg2;
+			if (debug) debug(out);
+			
 			return true;
 		} else return false;
 	}
@@ -511,6 +450,12 @@ public class DependencyAnalyser {
 	public static void main(String[] arg) throws Exception
 	{
 		System.out.println("Java Dependency Analyser");
+		
+		//Preparation
+		osName = System.getProperty("os.name");
+		if (debug)  debug("OS: " + osName); 
+		wrkDir = System.getProperty("user.dir");
+		if (debug)  debug("Working directory: " + wrkDir); 
 		
 		DependencyAnalyser ctx = new DependencyAnalyser();
 		
@@ -524,12 +469,28 @@ public class DependencyAnalyser {
 				i++;
 				debug = true;
 				if (debug) debug("Debug mode - on");
-			} else if ( validateOption(arg[i],"-job") )
+			} else if ( validateOption(arg,i,"-debuglog") )
+			{
+				i++;
+				debuglog = arg[i];
+				i++;
+				File f = new File(new File(wrkDir), runName);
+				f.mkdirs();
+				debugLogWriter = new BufferedWriter(new FileWriter(new File(f,debuglog)));
+			} else if ( validateOption(arg,i,"-reportlog") )
+			{
+				i++;
+				reportlog = arg[i];
+				i++;
+				File f = new File(new File(wrkDir), runName);
+				f.mkdirs();
+				reportLogWriter = new BufferedWriter(new FileWriter(new File(f,reportlog)));
+			} else if ( validateOption(arg,i,"-job") )
 			{
 				i++;
 				activeJob = arg[i].toLowerCase();
 				i++;
-			} else if ( validateOption(arg[i],"-includetasks") )
+			} else if ( validateOption(arg,i,"-includetasks") )
 			{
 				i++;
 				StringTokenizer tok = new StringTokenizer(arg[i],",");
@@ -541,7 +502,7 @@ public class DependencyAnalyser {
 					else terminateWithError("Task not found: " + token);
 				}
 				i++;
-			} else if ( validateOption(arg[i],"-excludetasks") )
+			} else if ( validateOption(arg,i,"-excludetasks") )
 			{
 				i++;
 				StringTokenizer tok = new StringTokenizer(arg[i],",");
@@ -557,12 +518,12 @@ public class DependencyAnalyser {
 			{
 				i++;
 				recursive = true;
-			} else if ( validateOption(arg[i],"-savecharsets") )
+			} else if ( validateOption(arg,i,"-savecharsets") )
 			{
 				i++;
 				saveCharsets = arg[i];
 				i++;
-			} else if ( validateOption(arg[i],"-savelocales") )
+			} else if ( validateOption(arg,i,"-savelocales") )
 			{
 				i++;
 				saveLocales = arg[i];
@@ -571,20 +532,18 @@ public class DependencyAnalyser {
 			{
 				i++;
 				detailsClass = true;
-			} else if ( validateOption(arg[i],"-appclasspath") )
+			} else if ( validateOption(arg,i,"-appclasspath") )
 			{
 				i++;
 				appClasspath = arg[i];
 				i++;
-				if (debug) debug("Param -appclasspath: " + appClasspath);
-			} else if ( validateOption(arg[i],"-jre") )
+			} else if ( validateOption(arg,i,"-jre") )
 			{
 				i++;
 				String s = arg[i];
 				if (s!=null) jreDir = new File(s);
 				i++;
-				if (debug) debug("Param -jre: " + jreDir);
-			} else if ( validateOption(arg[i],"-unittest") )
+			} else if ( validateOption(arg,i,"-unittest") )
 			{
 				i++;
 				String unittest = arg[i];
@@ -609,14 +568,20 @@ public class DependencyAnalyser {
 			if (debug) debug("No options specified!");
 			ctx.getJobs();
 			ctx.describeJobs();
+			print( "Terminating" ); 
+			
+			finalizeResources();
 			System.exit(1);
 		}
 		activeTasks = ctx.getActiveTasks(activeJob);
 		ctx.checkOptions( activeTasks);
 		ctx.execute();
-		printReport();
 		
+		printReport();
+	
 		if (debug) debug("Terminating regularely");
+	
+		finalizeResources();
 	}
 }
 

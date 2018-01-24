@@ -33,15 +33,17 @@ public class TaskClassDependencies extends AbstractTask {
 	{
 		for(String module: appModulePaths) {
 			analyseModule( module, appModules, allModules);
+			
 		}
 		for(String module: jreModulePaths) {
 			analyseModule( module, jreModules, allModules);
 		}
+		print("");
 	}
 
 	public String[] dependsOnTasks()
 	{
-		return new String[] { "ListJREModules", "ParseAppClassPath" };
+		return new String[] { "ListJREModules", "ParseAppClasspath" };
 	}
 	
 	public static void resolveDependencies()
@@ -57,13 +59,21 @@ public class TaskClassDependencies extends AbstractTask {
 						Module depModule = resolveKlass(dep.klassname);	
 						dep.resolvedto = depModule;			
 						if (dep.resolvedto==null)
-							print("Resolution failure: " + module.name +":"+entry.getValue().name+"->"+dep.klassname);
+						{
+							module.addUnresolved(dep.klassname);
+							String s = "Resolution failure: " + module.name +" : "+entry.getValue().name+" -> "+dep.klassname;
+							if (detailsClass==true)
+								print(s);
+							else
+								if (debug) debug(s);
+						}
 						else {
 							module.addDependency(depModule, depModule.klasses.get(dep.klassname));
 						}
 					}
 				}
 			}
+			module.reportDependencies();
 		}
 	}
 

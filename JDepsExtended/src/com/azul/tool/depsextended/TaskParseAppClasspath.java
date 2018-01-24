@@ -22,7 +22,7 @@ public class TaskParseAppClasspath extends AbstractTask {
 	
 	public Option[] getOptions(){
 		return new Option[] {
-				new Option("-appclasspath", false, "<classpath> - Application classpath. Wildcards allowed e.g. c:/cassandra/lib/*")
+				new Option("-appclasspath", false, "<classpath> - Application classpath. Accepts the wirldcard '~' e.g. c:/cassandra/lib/~")
 		};
 	}
 	
